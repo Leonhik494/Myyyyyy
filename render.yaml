@@ -1,4 +1,3 @@
-[file name]: render.yaml
 services:
   - type: web
     name: smart-neural-ai
