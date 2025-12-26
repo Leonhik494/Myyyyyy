@@ -19,12 +19,17 @@ const CONFIG = {
     }
 };
 
-// Инициализация
+// ============ ИНИЦИАЛИЗАЦИЯ ============
+
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Smart Neural AI запускается...');
     console.log(`🌐 Сервер: ${CONFIG.API_URL}`);
     
+    // Проверка сервера
     await checkServerStatus();
+    
+    // Проверка Exa AI
+    await testExaAI();
     
     if (CONFIG.state.token) {
         await checkAuthentication();
@@ -38,25 +43,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('✅ Приложение готово');
 });
 
-// Проверка сервера
+// ============ ПРОВЕРКА СЕРВЕРА ============
+
 async function checkServerStatus() {
-    console.log('🔍 Проверяем сервер...');
-    
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        console.log('🔍 Проверяем сервер...');
         
         const response = await fetch(`${CONFIG.API_URL}/api/health`, {
             method: 'GET',
             headers: { 
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
-            },
-            mode: 'cors',
-            signal: controller.signal
+            }
         });
-        
-        clearTimeout(timeoutId);
         
         if (response.ok) {
             const data = await response.json();
@@ -70,14 +69,11 @@ async function checkServerStatus() {
             }
             
             showNotification('✅ Сервер подключен', 'success');
-            
-            if (CONFIG.state.isAuthenticated && CONFIG.state.user?.role === 'creator') {
-                await loadAdminData();
-            }
-            
+            return true;
         } else {
             CONFIG.state.serverStatus = 'offline';
             showNotification('⚠️ Сервер недоступен', 'warning');
+            return false;
         }
     } catch (error) {
         console.error('❌ Ошибка подключения:', error);
@@ -88,10 +84,53 @@ async function checkServerStatus() {
             statusEl.innerHTML = `<i class="fas fa-circle"></i> Сервер оффлайн`;
             statusEl.className = 'status-indicator status-offline';
         }
+        return false;
     }
 }
 
-// Аутентификация
+// ============ ТЕСТ EXA AI ============
+
+async function testExaAI() {
+    try {
+        console.log('🤖 Тестируем Exa AI...');
+        
+        const response = await fetch(`${CONFIG.API_URL}/api/test/exa`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('✅ Exa AI тест:', data);
+            
+            if (data.success) {
+                console.log('🎯 Exa AI работает!');
+                
+                // Показываем статус в чате
+                const chat = document.getElementById('chat-messages');
+                if (chat) {
+                    const aiStatus = document.createElement('div');
+                    aiStatus.className = 'message system';
+                    aiStatus.innerHTML = `
+                        <div class="avatar" style="background: #10b981">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="content">
+                            <p><strong>✅ Exa AI подключен и готов к работе!</strong></p>
+                            <p>Тестовый ответ: "${data.response.substring(0, 100)}..."</p>
+                            <small>Сервер: ${CONFIG.API_URL}</small>
+                        </div>
+                    `;
+                    chat.appendChild(aiStatus);
+                }
+            } else {
+                console.warn('⚠️ Exa AI не отвечает правильно');
+            }
+        }
+    } catch (error) {
+        console.warn('⚠️ Exa AI тест не прошел:', error);
+    }
+}
+
+// ============ АУТЕНТИФИКАЦИЯ ============
+
 async function checkAuthentication() {
     if (!CONFIG.state.token) return;
     
@@ -108,7 +147,7 @@ async function checkAuthentication() {
             const data = await response.json();
             CONFIG.state.isAuthenticated = true;
             CONFIG.state.user = data.user;
-            CONFIG.state.usage = data.usage;
+            CONFIG.state.usage = data.usage || CONFIG.state.usage;
             
             updateAuthUI();
             loadSubscriptionInfo();
@@ -116,7 +155,6 @@ async function checkAuthentication() {
             
             if (data.user.role === 'creator') {
                 showCreatorFeatures();
-                await loadAdminData();
             }
         }
     } catch (error) {
@@ -184,7 +222,6 @@ async function loginUser(username, password) {
             
             if (data.user.role === 'creator') {
                 showCreatorFeatures();
-                await loadAdminData();
             }
             
             switchSection('chat');
@@ -201,6 +238,7 @@ function logoutUser() {
     CONFIG.state.token = null;
     CONFIG.state.isAuthenticated = false;
     CONFIG.state.user = null;
+    CONFIG.state.usage = { today: 0, limit: 10, remaining: 10, unlimited: false };
     
     showNotification('Вы вышли из системы', 'info');
     updateAuthUI();
@@ -209,29 +247,8 @@ function logoutUser() {
     switchSection('chat');
 }
 
-// Админ функции
-async function loadAdminData() {
-    if (!CONFIG.state.isAuthenticated || CONFIG.state.user.role !== 'creator') return;
-    
-    try {
-        console.log('👑 Загружаем админ данные...');
-        
-        const balanceResponse = await fetch(`${CONFIG.API_URL}/api/admin/balance`, {
-            headers: {
-                'Authorization': `Bearer ${CONFIG.state.token}`
-            }
-        });
-        
-        if (balanceResponse.ok) {
-            const balanceData = await balanceResponse.json();
-            console.log('💰 Баланс загружен:', balanceData.balance);
-        }
-    } catch (error) {
-        console.error('Error loading admin data:', error);
-    }
-}
+// ============ ПОДПИСКИ ============
 
-// Подписки
 async function loadSubscriptionPlans() {
     try {
         const response = await fetch(`${CONFIG.API_URL}/api/subscriptions/plans`);
@@ -258,7 +275,7 @@ async function loadSubscriptionInfo() {
         if (response.ok) {
             const data = await response.json();
             CONFIG.state.subscription = data.subscription;
-            CONFIG.state.usage = data.usage;
+            CONFIG.state.usage = data.usage || CONFIG.state.usage;
             
             updateSubscriptionUI();
             updateUsageUI();
@@ -268,7 +285,8 @@ async function loadSubscriptionInfo() {
     }
 }
 
-// AI запрос
+// ============ AI ЗАПРОС ============
+
 async function sendAIRequest(prompt) {
     if (!CONFIG.state.isAuthenticated) {
         showNotification('Войдите в систему для использования AI', 'warning');
@@ -282,8 +300,9 @@ async function sendAIRequest(prompt) {
     
     try {
         addMessageToChat(prompt, 'user');
-        showNotification('Генерируем ответ...', 'info');
+        showNotification('🤖 Генерируем ответ через Exa AI...', 'info');
         
+        console.log('🔄 Отправляем запрос к Exa AI...');
         const response = await fetch(`${CONFIG.API_URL}/api/ai/generate`, {
             method: 'POST',
             headers: {
@@ -294,24 +313,31 @@ async function sendAIRequest(prompt) {
         });
         
         const data = await response.json();
+        console.log('📥 Ответ от сервера:', data);
         
         if (data.success) {
-            const aiResponse = typeof data.response === 'string' 
-                ? data.response 
-                : JSON.stringify(data.response, null, 2);
+            const aiResponse = data.response;
             
-            addMessageToChat(aiResponse, 'system');
+            // Форматируем ответ
+            let formattedResponse = aiResponse;
+            if (typeof aiResponse === 'string') {
+                formattedResponse = aiResponse
+                    .replace(/\\n/g, '\n')
+                    .replace(/\\"/g, '"');
+            }
+            
+            addMessageToChat(formattedResponse, 'system');
             
             if (data.usage) {
                 CONFIG.state.usage = data.usage;
                 updateUsageUI();
             }
             
-            showNotification('✅ Ответ получен!', 'success');
+            showNotification(`✅ Ответ получен! (${data.response_time || 0}ms)`, 'success');
             
             CONFIG.state.chatHistory.push({
                 prompt,
-                response: aiResponse,
+                response: formattedResponse,
                 timestamp: new Date().toISOString(),
                 tier: CONFIG.state.subscription?.tier || 'free'
             });
@@ -321,16 +347,17 @@ async function sendAIRequest(prompt) {
             addMessageToChat('⚠️ Дневной лимит запросов исчерпан.', 'system');
         } else {
             showNotification(data.error || 'Ошибка генерации', 'error');
-            addMessageToChat('❌ Ошибка при генерации ответа', 'system');
+            addMessageToChat(`❌ Ошибка: ${data.error || 'Неизвестная ошибка'}`, 'system');
         }
     } catch (error) {
         console.error('AI request error:', error);
-        showNotification('❌ Ошибка генерации ответа', 'error');
-        addMessageToChat('❌ Произошла ошибка при генерации ответа', 'system');
+        showNotification('❌ Ошибка подключения к AI', 'error');
+        addMessageToChat('❌ Ошибка подключения к AI сервису. Попробуйте позже.', 'system');
     }
 }
 
-// UI функции
+// ============ UI ФУНКЦИИ ============
+
 function updateAuthUI() {
     const userInfo = document.getElementById('user-info');
     const authForms = document.getElementById('auth-forms');
@@ -409,6 +436,15 @@ function updateUsageUI() {
     totalElement.textContent = limit === -1 ? '∞' : limit;
     remainingElement.textContent = limit === -1 ? '∞' : remaining;
     progressFill.style.width = `${percentage}%`;
+    
+    // Меняем цвет прогресса
+    if (percentage > 80) {
+        progressFill.style.backgroundColor = '#f39c12';
+    } else if (percentage > 95) {
+        progressFill.style.backgroundColor = '#e74c3c';
+    } else {
+        progressFill.style.backgroundColor = '#2ecc71';
+    }
 }
 
 function updatePlansUI() {
@@ -467,6 +503,7 @@ function addMessageToChat(message, type = 'system') {
         </div>
         <div class="content">
             <p>${escapeHtml(message)}</p>
+            <small>${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
         </div>
     `;
     
@@ -482,10 +519,12 @@ function clearChat() {
                 <div class="avatar"><i class="fas fa-robot"></i></div>
                 <div class="content">
                     <p>Чат очищен. Задайте мне вопрос!</p>
-                    <p>Сервер: ${CONFIG.API_URL}</p>
+                    <p><strong>Сервер:</strong> ${CONFIG.API_URL}</p>
+                    <p><strong>AI:</strong> Exa AI подключен</p>
                 </div>
             </div>
         `;
+        CONFIG.state.chatHistory = [];
     }
 }
 
@@ -546,8 +585,10 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Инициализация UI
+// ============ ИНИЦИАЛИЗАЦИЯ UI ============
+
 function initUI() {
+    // Счетчик символов
     const promptInput = document.getElementById('prompt-input');
     const charCount = document.getElementById('char-count');
     
@@ -557,29 +598,35 @@ function initUI() {
         });
     }
     
+    // Инициализация чата
     const chatMessages = document.getElementById('chat-messages');
     if (chatMessages) {
         chatMessages.innerHTML = `
             <div class="message system">
                 <div class="avatar"><i class="fas fa-robot"></i></div>
                 <div class="content">
-                    <p>Привет! Я Smart Neural AI.</p>
+                    <p>🤖 <strong>Smart Neural AI v3.5</strong></p>
                     <p>Сервер: ${CONFIG.API_URL}</p>
+                    <p>AI: Exa AI (GPT-4)</p>
                     <p>👑 Создатель: alexey_creator / CreatorPass123!</p>
                     <p>👤 Тестовый: test_user / test123</p>
+                    <small>Отправьте запрос для тестирования AI</small>
                 </div>
             </div>
         `;
     }
 }
 
-// Обработчики событий
+// ============ ОБРАБОТЧИКИ СОБЫТИЙ ============
+
 function initEventListeners() {
+    // Проверка статуса
     const refreshBtn = document.getElementById('refresh-status');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', checkServerStatus);
     }
     
+    // Переключение табов авторизации
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.dataset.tab;
@@ -591,6 +638,7 @@ function initEventListeners() {
         });
     });
     
+    // Регистрация
     const registerForm = document.getElementById('register-form');
     if (registerForm) {
         registerForm.addEventListener('submit', async (e) => {
@@ -608,6 +656,7 @@ function initEventListeners() {
         });
     }
     
+    // Вход
     const loginForm = document.getElementById('login-form');
     if (loginForm) {
         loginForm.addEventListener('submit', async (e) => {
@@ -619,11 +668,13 @@ function initEventListeners() {
         });
     }
     
+    // Выход
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', logoutUser);
     }
     
+    // Отправка промпта
     const sendBtn = document.getElementById('send-prompt');
     if (sendBtn) {
         sendBtn.addEventListener('click', () => {
@@ -640,6 +691,7 @@ function initEventListeners() {
         });
     }
     
+    // Enter для отправки
     const promptInput = document.getElementById('prompt-input');
     if (promptInput) {
         promptInput.addEventListener('keydown', (e) => {
@@ -651,11 +703,13 @@ function initEventListeners() {
         });
     }
     
+    // Очистка чата
     const clearBtn = document.getElementById('clear-chat');
     if (clearBtn) {
         clearBtn.addEventListener('click', clearChat);
     }
     
+    // Навигация
     document.addEventListener('click', (e) => {
         if (e.target.closest('.nav-btn')) {
             const btn = e.target.closest('.nav-btn');
@@ -663,4 +717,40 @@ function initEventListeners() {
             if (section) switchSection(section);
         }
     });
+    
+    // Тестовые платежи
+    document.addEventListener('click', async (e) => {
+        if (e.target.closest('.test-payment-btn')) {
+            const planId = e.target.closest('.test-payment-btn').dataset.planId;
+            if (planId && CONFIG.state.user?.role === 'creator') {
+                try {
+                    showNotification('Обрабатываем тестовый платеж...', 'info');
+                    
+                    const response = await fetch(`${CONFIG.API_URL}/api/payments/create-test`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${CONFIG.state.token}`
+                        },
+                        body: JSON.stringify({ planId })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        showNotification('✅ Тестовый платеж успешен!', 'success');
+                        loadSubscriptionInfo();
+                    } else {
+                        showNotification(data.error || 'Ошибка платежа', 'error');
+                    }
+                } catch (error) {
+                    showNotification('❌ Ошибка платежа', 'error');
+                }
+            } else if (!CONFIG.state.isAuthenticated) {
+                showNotification('Войдите в систему для оплаты', 'warning');
+            }
+        }
+    });
 }
+
+console.log('✅ Smart Neural AI frontend загружен');
