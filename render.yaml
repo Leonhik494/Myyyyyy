@@ -14,3 +14,16 @@ services:
       - key: NODE_ENV
         value: production
     healthCheckPath: /api/health
+    
+    # ДОБАВЬТЕ ЭТО:
+    buildCommand: |
+      curl -fsSL https://ollama.com/install.sh | sh
+      ollama pull llama3.1:8b
+      npm install
+    startCommand: |
+      # Запускаем Ollama в фоне
+      ollama serve &
+      # Ждем запуска
+      sleep 10
+      # Запускаем основной сервер
+      node server.js
