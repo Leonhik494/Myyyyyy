@@ -1,0 +1,17 @@
+[file name]: render.yaml
+services:
+  - type: web
+    name: smart-neural-ai
+    env: node
+    region: frankfurt
+    plan: free
+    branch: main
+    buildCommand: npm install
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /api/health

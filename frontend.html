@@ -1,0 +1,251 @@
+[file name]: frontend.html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Neural AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f7fa; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; min-height: 100vh; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: white; border-bottom: 1px solid #eaeaea; }
+        .logo { display: flex; align-items: center; gap: 1rem; }
+        .logo i { font-size: 2rem; color: #6366f1; }
+        .logo h1 { font-size: 1.5rem; }
+        .creator-label { background: #f59e0b; color: white; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem; margin-left: 0.5rem; }
+        
+        .server-status { display: flex; align-items: center; gap: 1rem; }
+        .status-indicator { padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
+        .status-online { background: #dcfce7; color: #166534; }
+        .status-offline { background: #fee2e2; color: #991b1b; }
+        
+        .btn { padding: 0.5rem 1rem; border: none; border-radius: 8px; font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; }
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-outline { background: transparent; border: 1px solid #d1d5db; color: #6b7280; }
+        .btn-small { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+        
+        .main-content { display: flex; min-height: calc(100vh - 130px); }
+        .sidebar { width: 280px; background: #f9fafb; border-right: 1px solid #e5e7eb; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
+        
+        .user-section { background: white; border-radius: 12px; padding: 1.5rem; }
+        .user-info { text-align: center; }
+        .avatar { width: 70px; height: 70px; border-radius: 50%; background: #6366f1; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: white; margin: 0 auto 1rem; }
+        .creator-avatar { background: #f59e0b; }
+        .creator-badge { background: #f59e0b; color: white; padding: 0.3rem 0.8rem; border-radius: 15px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.5rem; }
+        
+        .auth-forms input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; margin-bottom: 1rem; }
+        .form-toggle { display: flex; background: #f3f4f6; border-radius: 8px; padding: 0.25rem; margin-bottom: 1rem; }
+        .tab-btn { flex: 1; padding: 0.5rem; border: none; background: none; cursor: pointer; border-radius: 6px; }
+        .tab-btn.active { background: white; }
+        .auth-form { display: none; }
+        .auth-form.active { display: block; }
+        
+        .nav-menu { display: flex; flex-direction: column; gap: 0.5rem; }
+        .nav-btn { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1rem; border: none; background: none; cursor: pointer; border-radius: 8px; text-align: left; color: #6b7280; }
+        .nav-btn:hover { background: #f3f4f6; }
+        .nav-btn.active { background: #6366f1; color: white; }
+        
+        .content-area { flex: 1; padding: 2rem; }
+        .content-section { display: none; }
+        .content-section.active { display: block; }
+        
+        .chat-container { max-width: 800px; margin: 0 auto; }
+        .messages { height: 500px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: #f9fafb; }
+        .message { display: flex; gap: 1rem; margin-bottom: 1rem; }
+        .message .content { background: white; padding: 0.75rem 1rem; border-radius: 12px; max-width: 70%; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .message.user .content { background: #6366f1; color: white; }
+        
+        .prompt-container textarea { width: 100%; padding: 1rem; border: 1px solid #d1d5db; border-radius: 12px; font-size: 1rem; resize: none; margin-bottom: 1rem; }
+        
+        .plans-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0; }
+        .plan-card { background: white; border: 1px solid #e5e7eb; border-radius: 16px; padding: 1.5rem; }
+        .plan-card.popular { border-color: #6366f1; }
+        .popular-badge { background: #6366f1; color: white; padding: 0.3rem 1rem; border-radius: 15px; font-size: 0.8rem; text-align: center; margin-bottom: 1rem; }
+        
+        .usage-container { display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; margin: 2rem 0; }
+        .usage-card { background: white; border-radius: 16px; padding: 2rem; text-align: center; }
+        .progress-bar { height: 10px; background: #e5e7eb; border-radius: 5px; margin: 1rem 0; overflow: hidden; }
+        .progress-fill { height: 100%; background: #10b981; width: 0%; }
+        
+        .footer { background: #1f2937; color: white; padding: 2rem; margin-top: 3rem; text-align: center; }
+        
+        .hidden { display: none !important; }
+        
+        @media (max-width: 768px) {
+            .main-content { flex-direction: column; }
+            .sidebar { width: 100%; }
+            .plans-container, .usage-container { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-brain"></i>
+                <h1>Smart Neural AI <span class="creator-label">PRO</span></h1>
+            </div>
+            <div class="server-status">
+                <span id="status-indicator" class="status-indicator status-offline">
+                    <i class="fas fa-circle"></i> Проверка сервера...
+                </span>
+                <button id="refresh-status" class="btn btn-small">
+                    <i class="fas fa-sync-alt"></i> Проверить
+                </button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <aside class="sidebar">
+                <div class="user-section">
+                    <div class="user-info hidden" id="user-info">
+                        <div class="avatar creator-avatar">
+                            <i class="fas fa-user-crown"></i>
+                        </div>
+                        <div class="user-details">
+                            <h3 id="username">Гость</h3>
+                            <div class="user-role hidden" id="user-role"></div>
+                            <button id="logout-btn" class="btn btn-small btn-outline">
+                                <i class="fas fa-sign-out-alt"></i> Выйти
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="auth-forms" id="auth-forms">
+                        <div class="form-toggle">
+                            <button class="tab-btn active" data-tab="login">Вход</button>
+                            <button class="tab-btn" data-tab="register">Регистрация</button>
+                        </div>
+                        
+                        <form id="login-form" class="auth-form active">
+                            <input type="text" id="login-username" placeholder="Имя пользователя" value="alexey_creator">
+                            <input type="password" id="login-password" placeholder="Пароль" value="CreatorPass123!">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-sign-in-alt"></i> Войти
+                            </button>
+                            <div class="form-hint">
+                                <small>Тестовый: test_user / test123</small>
+                            </div>
+                        </form>
+                        
+                        <form id="register-form" class="auth-form">
+                            <input type="text" id="register-username" placeholder="Имя пользователя" required>
+                            <input type="email" id="register-email" placeholder="Email" required>
+                            <input type="password" id="register-password" placeholder="Пароль (мин. 6 символов)" required>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-user-plus"></i> Зарегистрироваться
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                
+                <nav class="nav-menu">
+                    <button class="nav-btn active" data-section="chat">
+                        <i class="fas fa-comments"></i> Чат с AI
+                    </button>
+                    <button class="nav-btn" data-section="subscription">
+                        <i class="fas fa-crown"></i> Подписки
+                    </button>
+                    <button class="nav-btn" data-section="usage">
+                        <i class="fas fa-chart-bar"></i> Использование
+                    </button>
+                </nav>
+                
+                <div class="server-info">
+                    <h4><i class="fas fa-server"></i> Сервер</h4>
+                    <p>https://my-6xme.onrender.com</p>
+                </div>
+            </aside>
+
+            <div class="content-area">
+                <section id="chat-section" class="content-section active">
+                    <div class="chat-header">
+                        <h2><i class="fas fa-robot"></i> Чат с нейросетью</h2>
+                        <button id="clear-chat" class="btn btn-small">
+                            <i class="fas fa-trash"></i> Очистить
+                        </button>
+                    </div>
+                    
+                    <div class="chat-container">
+                        <div class="messages" id="chat-messages"></div>
+                        
+                        <div class="input-area">
+                            <div class="prompt-container">
+                                <textarea id="prompt-input" placeholder="Введите ваш запрос..." rows="3" disabled></textarea>
+                                <div class="prompt-controls">
+                                    <div class="char-count">
+                                        <span id="char-count">0</span>/2000
+                                    </div>
+                                    <button id="send-prompt" class="btn btn-primary" disabled>
+                                        <i class="fas fa-paper-plane"></i> Отправить
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="subscription-section" class="content-section">
+                    <div class="subscription-header">
+                        <h2><i class="fas fa-crown"></i> Тарифные планы</h2>
+                        <p class="subtitle">Выберите подписку</p>
+                    </div>
+                    
+                    <div class="plans-container">
+                        <div class="loading-plans">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Загрузка тарифных планов...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="current-subscription" id="current-subscription">
+                        <h3><i class="fas fa-user-check"></i> Текущая подписка</h3>
+                        <div class="subscription-info">
+                            <p>Загрузка...</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="usage-section" class="content-section">
+                    <div class="usage-header">
+                        <h2><i class="fas fa-chart-bar"></i> Статистика использования</h2>
+                    </div>
+                    
+                    <div class="usage-container">
+                        <div class="usage-card">
+                            <div class="usage-metric">
+                                <div class="metric-value" id="daily-used">0</div>
+                                <div class="metric-label">Использовано сегодня</div>
+                            </div>
+                            <div class="usage-progress">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                                </div>
+                                <div class="progress-text">
+                                    <span id="remaining-requests">10</span> запросов осталось из <span id="total-requests">10</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <div id="notification-container"></div>
+
+        <footer class="footer">
+            <div class="footer-content">
+                <h4>Smart Neural AI v3.5</h4>
+                <p>Сервер: https://my-6xme.onrender.com</p>
+                <p class="creator-credit">👑 Создатель системы: Алексей Петров</p>
+                <p>© 2024 Все права защищены.</p>
+            </div>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
