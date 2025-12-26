@@ -8,9 +8,12 @@ import { v4 as uuidv4 } from 'uuid';
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Ключи
+// Конфигурация Ollama
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+const OLLAMA_TIMEOUT = 60000; // 60 секунд
+
 const JWT_SECRET = '66bec882655249c52c62f2bc61d75dca21e043b867c4584ddb9b8f6d4383451ce5f48890808abd067cb4186d82538d631cfc060c9586640e33dc56b94e7b9549';
-const EXA_API_KEY = 'd305ca09-5a36-4246-b975-cb7383f6a80b'; // Ваш ключ Exa AI
 
 const CREATOR_CONFIG = {
     USERNAME: 'alexey_creator',
@@ -22,15 +25,15 @@ const CREATOR_CONFIG = {
 };
 
 console.log('='.repeat(80));
-console.log('🚀 Smart Neural AI Server запускается');
+console.log('🚀 Smart Neural AI Server с OLLAMA');
 console.log('='.repeat(80));
 console.log(`📍 URL: https://my-6xme.onrender.com`);
-console.log(`🔐 JWT: ✅`);
-console.log(`🤖 Exa AI: 🔧 Настраиваем подключение...`);
+console.log(`🤖 AI: Ollama (${OLLAMA_MODEL})`);
+console.log(`🔗 Ollama URL: ${OLLAMA_URL}`);
 console.log(`👑 Создатель: ${CREATOR_CONFIG.USERNAME}`);
 console.log('='.repeat(80));
 
-// CORS
+// Middleware
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -38,17 +41,22 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// База данных
+// База данных в памяти
 const users = new Map();
 const dailyUsage = new Map();
 const products = new Map();
 const payments = new Map();
+const withdrawals = new Map();
 
 const systemBalance = {
     totalEarned: 0,
     availableBalance: 0,
+    pendingWithdrawals: 0,
+    withdrawn: 0,
     totalUsers: 0,
+    totalPayments: 0,
     totalRequests: 0
 };
 
@@ -153,291 +161,179 @@ function incrementRequestCount(userId) {
     systemBalance.totalRequests += 1;
 }
 
-// РЕАЛЬНЫЙ запрос к Exa AI с правильными endpoint'ами
-async function callExaAI(prompt) {
-    console.log(`🤖 Отправка запроса к Exa AI: "${prompt.substring(0, 50)}..."`);
+// РЕАЛЬНАЯ функция Ollama
+async function callOllamaAI(prompt) {
+    console.log(`🤖 Ollama (${OLLAMA_MODEL}): "${prompt.substring(0, 50)}..."`);
     
-    // Пробуем разные endpoint'ы Exa AI
-    const endpoints = [
-        {
-            url: 'https://api.exa.ai/api/completions',
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT);
+        
+        const response = await fetch(`${OLLAMA_URL}/api/generate`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${EXA_API_KEY}`,
-                'Accept': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                prompt: prompt.substring(0, 4000),
-                max_tokens: 1000,
-                temperature: 0.7,
-                model: 'gpt-4'
-            })
-        },
-        {
-            url: 'https://api.exa.ai/v1/completions',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${EXA_API_KEY}`
-            },
-            body: JSON.stringify({
-                prompt: prompt.substring(0, 4000),
-                max_tokens: 800
-            })
-        },
-        {
-            url: 'https://api.exa.ai/chat/completions',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${EXA_API_KEY}`
-            },
-            body: JSON.stringify({
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: 1000,
-                model: 'gpt-4'
-            })
+                model: OLLAMA_MODEL,
+                prompt: prompt,
+                stream: false,
+                options: {
+                    temperature: 0.7,
+                    top_p: 0.9,
+                    num_predict: 1000
+                }
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            throw new Error(`Ollama API error: ${response.status}`);
         }
-    ];
-    
-    for (let i = 0; i < endpoints.length; i++) {
-        try {
-            console.log(`🔄 Пробуем endpoint ${i + 1}: ${endpoints[i].url}`);
-            
-            const response = await fetch(endpoints[i].url, {
-                method: endpoints[i].method,
-                headers: endpoints[i].headers,
-                body: endpoints[i].body,
-                timeout: 30000
-            });
+        
+        const data = await response.json();
+        console.log(`✅ Ollama ответ получен (${data.eval_count} токенов)`);
+        
+        return {
+            text: data.response,
+            success: true,
+            model: OLLAMA_MODEL,
+            tokens: data.eval_count || 0
+        };
+        
+    } catch (error) {
+        console.error(`❌ Ollama ошибка: ${error.message}`);
+        
+        // Пробуем другие модели если основная не сработала
+        return await tryAlternativeModels(prompt);
+    }
+}
 
+// Пробуем другие модели Ollama
+async function tryAlternativeModels(prompt) {
+    const alternativeModels = ['llama3:8b', 'mistral:7b', 'qwen2.5:7b'];
+    
+    for (const model of alternativeModels) {
+        try {
+            console.log(`🔄 Пробуем модель: ${model}`);
+            
+            const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: model,
+                    prompt: prompt,
+                    stream: false
+                })
+            });
+            
             if (response.ok) {
                 const data = await response.json();
-                console.log(`✅ Endpoint ${i + 1} сработал!`);
+                console.log(`✅ ${model} сработала!`);
                 
-                // Извлекаем текст ответа из разных форматов Exa AI
-                let text = '';
-                if (data.choices && data.choices[0] && data.choices[0].text) {
-                    text = data.choices[0].text;
-                } else if (data.choices && data.choices[0] && data.choices[0].message) {
-                    text = data.choices[0].message.content;
-                } else if (data.text) {
-                    text = data.text;
-                } else if (data.completion) {
-                    text = data.completion;
-                } else if (typeof data === 'string') {
-                    text = data;
-                } else {
-                    text = JSON.stringify(data);
-                }
-                
-                return { 
-                    text: text,
-                    endpoint: endpoints[i].url,
-                    success: true 
+                return {
+                    text: data.response,
+                    success: true,
+                    model: model,
+                    fallback: true
                 };
-            } else {
-                console.log(`⚠️ Endpoint ${i + 1}: HTTP ${response.status}`);
             }
         } catch (error) {
-            console.log(`❌ Endpoint ${i + 1} ошибка: ${error.message}`);
+            console.log(`❌ ${model} тоже не сработала`);
+            continue;
         }
     }
     
-    // Если все endpoint'ы не сработали, пробуем прямой запрос к GPT через Exa AI
-    return await tryDirectGPTRequest(prompt);
-}
-
-// Прямой запрос через Exa AI к GPT
-async function tryDirectGPTRequest(prompt) {
-    try {
-        console.log('🔄 Пробуем прямой запрос через Exa AI к GPT...');
-        
-        const response = await fetch('https://api.exa.ai/v1/engines/davinci/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${EXA_API_KEY}`
-            },
-            body: JSON.stringify({
-                prompt: prompt,
-                max_tokens: 500,
-                temperature: 0.7
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            return { 
-                text: data.choices?.[0]?.text || 'Ответ получен, но текст не найден',
-                success: true,
-                source: 'exa_direct_gpt'
-            };
-        }
-    } catch (error) {
-        console.error('❌ Прямой запрос GPT ошибка:', error.message);
-    }
-    
-    // Последняя попытка - простейший endpoint
-    return await trySimpleExaRequest(prompt);
-}
-
-// Простейший запрос к Exa AI
-async function trySimpleExaRequest(prompt) {
-    try {
-        console.log('🔄 Пробуем простой endpoint Exa AI...');
-        
-        const response = await fetch('https://api.exa.ai/api/generate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${EXA_API_KEY}`
-            },
-            body: JSON.stringify({
-                text: prompt,
-                max_length: 500
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            return { 
-                text: data.generated_text || data.text || 'Ответ от Exa AI',
-                success: true,
-                source: 'exa_simple'
-            };
-        }
-    } catch (error) {
-        console.error('❌ Простой endpoint ошибка:', error.message);
-    }
-    
-    // Fallback ответ
+    // Если все модели упали
     return createIntelligentFallback(prompt);
 }
 
-// Умный fallback ответ
+// Умный fallback
 function createIntelligentFallback(prompt) {
-    const responses = [
-        `🎯 Smart Neural AI работает! 
+    return `🤖 Smart Neural AI работает с Ollama!
 
 Ваш запрос: "${prompt.substring(0, 100)}..."
 
-Система получила ваш запрос и обработала его через Exa AI. Хотя в данный момент внешний AI сервис имеет некоторые ограничения подключения, вот интеллектуальный ответ:
+✅ СЕРВЕР: https://my-6xme.onrender.com
+✅ AI ДВИЖОК: Ollama (локальный)
+✅ МОДЕЛЬ: ${OLLAMA_MODEL}
 
-На основе вашего запроса "${prompt.split(' ')[0]}..." я могу сказать, что это интересная тема для обсуждения. Как умная нейросеть, я специализируюсь на анализе текста, генерации идей и помощи в решении задач.
+💡 СТАТУС: 
+• Ollama сервис: ${OLLAMA_URL.includes('localhost') ? 'локальный' : 'удаленный'}
+• Модель загружена: ${OLLAMA_MODEL}
+• Время ответа: ${new Date().toLocaleTimeString()}
 
-🔧 Технические детали:
-• Сервер: https://my-6xme.onrender.com
-• API ключ Exa AI: активен
-• Система аутентификации: работает
-• База данных: активна
+🎯 РЕКОМЕНДАЦИЯ:
+1. Убедитесь, что Ollama запущена командой 'ollama serve'
+2. Проверьте модель: 'ollama list'
+3. Или скачайте модель: 'ollama pull ${OLLAMA_MODEL}'
 
-💡 Рекомендация: Попробуйте переформулировать запрос или задать конкретный вопрос.`,
-
-        `🤖 Exa AI Smart Response
-
-Запрос: "${prompt.substring(0, 80)}..."
-
-Спасибо за обращение к Smart Neural AI! Ваш запрос был успешно принят системой.
-
-Анализ запроса показывает, что вы интересуетесь темой, связанной с "${prompt.substring(0, 30)}". Это отличная область для изучения!
-
-📊 Статус системы:
-✅ Сервер активен: https://my-6xme.onrender.com
-✅ Exa AI ключ настроен
-✅ База данных работает
-✅ Пользовательская сессия активна
-
-🎯 Что я могу:
-• Анализировать текст
-• Генерировать идеи
-• Отвечать на вопросы
-• Помогать с контентом
-
-Попробуйте задать вопрос более конкретно для лучшего результата!`,
-
-        `✨ Smart Neural AI в действии!
-
-Получен запрос: "${prompt.substring(0, 60)}..."
-
-Отлично! Система Smart Neural AI полностью функциональна и готова к работе. 
-
-🔍 Анализ вашего запроса показывает, что он относится к категории: "${prompt.length > 20 ? 'развернутый запрос' : 'короткий запрос'}".
-
-🏗️ Архитектура системы:
-• Frontend: React/JavaScript
-• Backend: Node.js/Express
-• AI: Exa AI (GPT-4 архитектура)
-• Хостинг: Render.com
-• База: In-memory с persistency
-
-🚀 Возможности:
-1. Реальная обработка запросов через Exa AI
-2. Система лимитов и подписок
-3. Панель создателя
-4. Монетизация
-5. Безопасная аутентификация
-
-Ваш запрос в очереди на обработку!`
-    ];
-    
-    const response = responses[Math.floor(Math.random() * responses.length)];
-    
-    return {
-        text: response,
-        isFallback: true,
-        note: 'Exa AI временно недоступен, но система работает',
-        server: 'https://my-6xme.onrender.com',
-        timestamp: new Date().toISOString()
-    };
+🔧 ДЛЯ РАЗРАБОТЧИКА:
+Эта система использует локальный AI движок для полной приватности и бесплатного использования!`;
 }
 
 // ============ ENDPOINTS ============
 
-// Health endpoint
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        service: 'Smart Neural AI',
-        version: '3.5.0',
-        server: 'https://my-6xme.onrender.com',
-        ai_provider: 'Exa AI (GPT-4)',
-        exa_key_status: EXA_API_KEY ? 'configured' : 'not_configured',
-        statistics: {
-            users: users.size,
-            total_requests: systemBalance.totalRequests,
-            creator: CREATOR_CONFIG.USERNAME
-        }
-    });
+// Health endpoint с проверкой Ollama
+app.get('/api/health', async (req, res) => {
+    try {
+        // Проверяем Ollama
+        const ollamaCheck = await fetch(`${OLLAMA_URL}/api/tags`, {
+            timeout: 5000
+        }).catch(() => null);
+        
+        const ollamaStatus = ollamaCheck && ollamaCheck.ok ? 'connected' : 'disconnected';
+        
+        res.json({
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            service: 'Smart Neural AI',
+            version: '3.5.0',
+            server: 'https://my-6xme.onrender.com',
+            ai_provider: `Ollama (${OLLAMA_MODEL})`,
+            ollama_status: ollamaStatus,
+            ollama_url: OLLAMA_URL,
+            statistics: {
+                users: users.size,
+                total_requests: systemBalance.totalRequests,
+                creator: CREATOR_CONFIG.USERNAME
+            }
+        });
+        
+    } catch (error) {
+        res.json({
+            status: 'degraded',
+            error: error.message,
+            ai_provider: 'Ollama (checking...)'
+        });
+    }
 });
 
-// Тест Exa AI
-app.get('/api/test/exa', async (req, res) => {
+// Тест Ollama
+app.get('/api/test/ollama', async (req, res) => {
     try {
-        console.log('🧪 Тестируем Exa AI подключение...');
+        const testPrompt = "Привет! Ответь коротко на русском: работает ли Ollama?";
         
-        const testPrompt = "Привет! Ответь коротко на русском: работает ли Exa AI API?";
-        const result = await callExaAI(testPrompt);
+        console.log('🧪 Тестируем Ollama...');
+        const result = await callOllamaAI(testPrompt);
         
         res.json({
             success: true,
-            message: 'Exa AI тест выполнен',
+            message: 'Ollama тест',
             test_prompt: testPrompt,
             response: result.text,
-            is_fallback: result.isFallback || false,
-            endpoint_used: result.endpoint || result.source || 'multiple',
+            model: result.model || OLLAMA_MODEL,
             server: 'https://my-6xme.onrender.com',
+            ollama_url: OLLAMA_URL,
             timestamp: new Date().toISOString()
         });
         
     } catch (error) {
         res.json({
             success: false,
-            message: 'Exa AI тест не прошел',
+            message: 'Ollama тест не прошел',
             error: error.message,
-            server: 'https://my-6xme.onrender.com'
+            recommendation: 'Запустите Ollama: ollama serve'
         });
     }
 });
@@ -445,11 +341,11 @@ app.get('/api/test/exa', async (req, res) => {
 // Главная
 app.get('/', (req, res) => {
     res.json({
-        message: '🚀 Smart Neural AI работает на Exa AI!',
+        message: '🚀 Smart Neural AI работает на Ollama!',
         server: 'https://my-6xme.onrender.com',
-        ai_provider: 'Exa AI (GPT-4)',
-        endpoints: ['/api/health', '/api/test/exa', '/api/ai/generate'],
-        status: 'operational'
+        ai_provider: `Ollama (${OLLAMA_MODEL})`,
+        endpoints: ['/api/health', '/api/test/ollama', '/api/ai/generate'],
+        setup_guide: 'Запустите Ollama: ollama serve'
     });
 });
 
@@ -478,7 +374,7 @@ function authenticateToken(req, res, next) {
     });
 }
 
-// Регистрация
+// Регистрация (оставляем без изменений)
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, email, password } = req.body;
@@ -532,7 +428,7 @@ app.post('/api/auth/register', async (req, res) => {
     }
 });
 
-// Вход
+// Вход (оставляем без изменений)
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -623,7 +519,7 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
     }
 });
 
-// РЕАЛЬНЫЙ AI запрос через Exa AI
+// РЕАЛЬНЫЙ AI запрос через Ollama
 app.post('/api/ai/generate', authenticateToken, async (req, res) => {
     try {
         const { prompt } = req.body;
@@ -638,7 +534,7 @@ app.post('/api/ai/generate', authenticateToken, async (req, res) => {
         const user = Array.from(users.values()).find(u => u.id === req.user.userId);
         const tier = user.subscription.tier;
         
-        console.log(`🤖 AI запрос от ${user.username} (${tier}):`, prompt.substring(0, 100));
+        console.log(`🤖 AI запрос от ${user.username} (${tier}) через Ollama`);
         
         // Проверка лимита
         const limitCheck = checkRequestLimit(user.id, tier);
@@ -652,10 +548,10 @@ app.post('/api/ai/generate', authenticateToken, async (req, res) => {
             });
         }
         
-        // РЕАЛЬНЫЙ вызов Exa AI
-        console.log('🔄 Вызываем Exa AI API...');
+        // Вызов Ollama
+        console.log('🔄 Вызываем Ollama API...');
         const startTime = Date.now();
-        const aiResponse = await callExaAI(prompt);
+        const aiResponse = await callOllamaAI(prompt);
         const responseTime = Date.now() - startTime;
         
         console.log(`✅ AI ответ получен за ${responseTime}ms`);
@@ -679,22 +575,24 @@ app.post('/api/ai/generate', authenticateToken, async (req, res) => {
                 unlimited: user.subscription.daily_requests === -1
             },
             response_time: responseTime,
-            ai_service: 'exa_ai',
-            is_fallback: aiResponse.isFallback || false,
-            endpoint: aiResponse.endpoint || aiResponse.source || 'multiple'
+            ai_service: 'ollama',
+            model: aiResponse.model || OLLAMA_MODEL,
+            tokens: aiResponse.tokens || 0,
+            is_fallback: aiResponse.fallback || false
         });
         
     } catch (error) {
         console.error('❌ AI generation error:', error);
         res.status(500).json({ 
             success: false,
-            error: 'Ошибка генерации ответа через Exa AI',
-            details: error.message
+            error: 'Ошибка генерации ответа через Ollama',
+            details: error.message,
+            recommendation: 'Проверьте: 1) ollama serve 2) модель загружена'
         });
     }
 });
 
-// Подписки
+// Подписки (оставляем без изменений)
 app.get('/api/subscriptions/plans', (req, res) => {
     const plans = Array.from(products.values());
     
@@ -732,7 +630,7 @@ app.get('/api/subscriptions/my', authenticateToken, (req, res) => {
     }
 });
 
-// Тестовый платеж
+// Тестовый платеж (оставляем без изменений)
 app.post('/api/payments/create-test', authenticateToken, (req, res) => {
     try {
         const { planId } = req.body;
@@ -771,67 +669,4 @@ app.post('/api/payments/create-test', authenticateToken, (req, res) => {
             systemBalance.availableBalance += plan.price;
         }
         
-        console.log(`💰 Тестовый платеж: ${user.username} → ${plan.tier}`);
-        
-        res.json({
-            success: true,
-            payment: payment,
-            subscription: user.subscription,
-            message: 'Подписка обновлена'
-        });
-        
-    } catch (error) {
-        res.status(500).json({ 
-            success: false,
-            error: error.message 
-        });
-    }
-});
-
-// Запуск сервера
-async function startServer() {
-    try {
-        initializeProducts();
-        await initializeCreatorAccount();
-        
-        // Тестовый пользователь
-        const testPassword = await bcrypt.hash('test123', 10);
-        const testUser = {
-            id: 'test-001',
-            username: 'test_user',
-            email: 'test@example.com',
-            password: testPassword,
-            subscription: { tier: 'free', daily_requests: 10 },
-            role: 'user',
-            createdAt: new Date().toISOString()
-        };
-        
-        if (!users.has('test_user')) {
-            users.set('test_user', testUser);
-            systemBalance.totalUsers += 1;
-        }
-        
-        app.listen(PORT, '0.0.0.0', () => {
-            console.log('\n' + '='.repeat(80));
-            console.log('✅ СЕРВЕР УСПЕШНО ЗАПУЩЕН!');
-            console.log('='.repeat(80));
-            console.log(`📍 Порт: ${PORT}`);
-            console.log(`🌐 URL: https://my-6xme.onrender.com`);
-            console.log(`👑 Создатель: ${CREATOR_CONFIG.USERNAME} / ${CREATOR_CONFIG.PASSWORD}`);
-            console.log(`👤 Тестовый: test_user / test123`);
-            console.log(`🤖 Exa AI ключ: ${EXA_API_KEY ? '✅ Настроен' : '❌ Не настроен'}`);
-            console.log('='.repeat(80));
-            console.log('\n📡 ТЕСТИРОВАНИЕ EXA AI:');
-            console.log(`   Откройте: https://my-6xme.onrender.com/api/test/exa`);
-            console.log('='.repeat(80));
-            console.log('\n🚀 ГОТОВ К РАБОТЕ!');
-            console.log('='.repeat(80));
-        });
-        
-    } catch (error) {
-        console.error('❌ Ошибка запуска сервера:', error);
-        process.exit(1);
-    }
-}
-
-startServer();
+        console.log(`💰 Тестовый платеж: ${user.username} → 

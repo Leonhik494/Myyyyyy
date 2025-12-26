@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: smart-neural-ai
+    name: my
     env: node
     region: frankfurt
     plan: free
